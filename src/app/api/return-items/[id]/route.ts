@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { returnItems, retailerPolicies } from "@/lib/db/schema";
-import { requireAuth } from "@/lib/utils/auth-middleware";
+import { requireAuth, getUserOrAnonymous } from "@/lib/utils/auth-middleware";
 import {
   updateReturnItemSchema,
   patchReturnItemSchema,
@@ -42,7 +42,9 @@ export async function GET(
         purchase_date: returnItems.purchaseDate,
         return_deadline: returnItems.returnDeadline,
         is_returned: returnItems.isReturned,
+        is_kept: returnItems.isKept,
         returned_date: returnItems.returnedDate,
+        kept_date: returnItems.keptDate,
         user_id: returnItems.userId,
         created_at: returnItems.createdAt,
         updated_at: returnItems.updatedAt,
@@ -164,7 +166,9 @@ export async function PUT(
         purchase_date: returnItems.purchaseDate,
         return_deadline: returnItems.returnDeadline,
         is_returned: returnItems.isReturned,
+        is_kept: returnItems.isKept,
         returned_date: returnItems.returnedDate,
+        kept_date: returnItems.keptDate,
         user_id: returnItems.userId,
         created_at: returnItems.createdAt,
         updated_at: returnItems.updatedAt,
@@ -197,14 +201,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await requireAuth(request);
-
-    if (authResult.error) {
-      return authResult.error;
-    }
+    const { userId } = await getUserOrAnonymous(request);
 
     const { id } = await params;
-    const userId = authResult.user.id;
     const body = await request.json();
 
     // Validate input
@@ -240,6 +239,9 @@ export async function PATCH(
 
     if (data.is_kept !== undefined) {
       updateData.isKept = data.is_kept;
+      if (data.is_kept) {
+        updateData.keptDate = new Date();
+      }
     }
 
     await db
@@ -260,14 +262,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await requireAuth(request);
-
-    if (authResult.error) {
-      return authResult.error;
-    }
+    const { userId } = await getUserOrAnonymous(request);
 
     const { id } = await params;
-    const userId = authResult.user.id;
 
     // Verify item belongs to user and delete
     const result = await db

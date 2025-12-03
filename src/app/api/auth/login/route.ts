@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { users, sessions } from "@/lib/db/schema";
+import { users, sessions, returnItems } from "@/lib/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { loginSchema } from "@/lib/validators/auth";
@@ -43,10 +43,19 @@ export async function POST(request: NextRequest) {
 
     // Migrate anonymous user data if anonymous_user_id provided
     if (anonymous_user_id) {
+      // Migrate sessions
       await db
         .update(sessions)
         .set({ userId: user.id })
         .where(eq(sessions.anonymousUserId, anonymous_user_id));
+
+      // Migrate return items from anonymous user to authenticated user
+      await db
+        .update(returnItems)
+        .set({ userId: user.id })
+        .where(eq(returnItems.userId, anonymous_user_id));
+
+      console.log(`Migrated anonymous data for ${anonymous_user_id} to user ${user.id}`);
     }
 
     // Create session

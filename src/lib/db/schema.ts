@@ -7,11 +7,15 @@ export const users = pgTable("users", {
   email: text("email").unique().notNull(),
   password: text("password"), // Nullable for OAuth users
   name: text("name"),
+  appleUserId: text("apple_user_id").unique(), // Apple's sub claim
+  googleUserId: text("google_user_id").unique(), // Google's sub claim
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   emailVerified: boolean("email_verified").default(false).notNull(),
 }, (table) => ({
   emailIdx: index("email_idx").on(table.email),
+  appleUserIdIdx: index("apple_user_id_idx").on(table.appleUserId),
+  googleUserIdIdx: index("google_user_id_idx").on(table.googleUserId),
 }));
 
 // Sessions table
@@ -72,8 +76,9 @@ export const returnItems = pgTable("return_items", {
   isReturned: boolean("is_returned").default(false).notNull(),
   isKept: boolean("is_kept").default(false).notNull(),
   returnedDate: timestamp("returned_date"),
+  keptDate: timestamp("kept_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
 }, (table) => ({
   userIdIdx: index("return_items_user_id_idx").on(table.userId),
   retailerIdIdx: index("return_items_retailer_id_idx").on(table.retailerId),

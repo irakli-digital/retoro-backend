@@ -65,9 +65,13 @@ export async function POST(request: NextRequest) {
         .set({ userId: newUser.id })
         .where(eq(sessions.anonymousUserId, anonymous_user_id));
 
-      // Migrate return items
-      // Note: This assumes returnItems has a userId field that can store anonymous IDs
-      // You may need to adjust based on your actual schema
+      // Migrate return items from anonymous user to new user
+      await db
+        .update(returnItems)
+        .set({ userId: newUser.id })
+        .where(eq(returnItems.userId, anonymous_user_id));
+
+      console.log(`Migrated anonymous data for ${anonymous_user_id} to user ${newUser.id}`);
     }
 
     // Create session

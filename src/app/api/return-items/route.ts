@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { returnItems, retailerPolicies } from "@/lib/db/schema";
-import { requireAuth } from "@/lib/utils/auth-middleware";
+import { getUserOrAnonymous } from "@/lib/utils/auth-middleware";
 import { createReturnItemSchema } from "@/lib/validators/return-items";
 import { calculateDeadline } from "@/lib/utils/return-logic";
 import {
@@ -11,19 +11,25 @@ import {
 } from "@/lib/utils/api-response";
 import { eq, and, or } from "drizzle-orm";
 
-// GET /api/return-items - Get all active return items for user
+// GET /api/return-items - Get return items for user (authenticated or anonymous)
+// Query params: ?includeHistory=true to get all items including returned/kept
 export async function GET(request: NextRequest) {
   try {
-    const authResult = await requireAuth(request);
+    const { userId } = await getUserOrAnonymous(request);
+    const { searchParams } = new URL(request.url);
+    const includeHistory = searchParams.get('includeHistory') === 'true';
 
-    if (authResult.error) {
-      return authResult.error;
-    }
+    // Build WHERE clause based on includeHistory flag
+    const whereClause = includeHistory
+      ? eq(returnItems.userId, userId)
+      : and(
+          eq(returnItems.userId, userId),
+          eq(returnItems.isReturned, false),
+          eq(returnItems.isKept, false)
+        );
 
-    const userId = authResult.user.id;
-
-    // Fetch active return items with retailer info
-    const items = await db
+    // Fetch return items with retailer info
+    const rawItems = await db
       .select({
         id: returnItems.id,
         retailer_id: returnItems.retailerId,
@@ -35,7 +41,9 @@ export async function GET(request: NextRequest) {
         purchase_date: returnItems.purchaseDate,
         return_deadline: returnItems.returnDeadline,
         is_returned: returnItems.isReturned,
+        is_kept: returnItems.isKept,
         returned_date: returnItems.returnedDate,
+        kept_date: returnItems.keptDate,
         user_id: returnItems.userId,
         created_at: returnItems.createdAt,
         updated_at: returnItems.updatedAt,
@@ -52,14 +60,21 @@ export async function GET(request: NextRequest) {
         retailerPolicies,
         eq(returnItems.retailerId, retailerPolicies.id)
       )
-      .where(
-        and(
-          eq(returnItems.userId, userId),
-          eq(returnItems.isReturned, false),
-          eq(returnItems.isKept, false)
-        )
-      )
+      .where(whereClause)
       .orderBy(returnItems.returnDeadline);
+
+    // Format response to match iOS expectations
+    const items = rawItems.map(item => ({
+      ...item,
+      price: item.price ? parseFloat(item.price) : null,
+      price_usd: item.price_usd ? parseFloat(item.price_usd) : null,
+      purchase_date: item.purchase_date.toISOString(),
+      return_deadline: item.return_deadline.toISOString(),
+      returned_date: item.returned_date ? item.returned_date.toISOString() : null,
+      kept_date: item.kept_date ? item.kept_date.toISOString() : null,
+      created_at: item.created_at.toISOString(),
+      updated_at: item.updated_at.toISOString(),
+    }));
 
     return successResponse(items);
   } catch (error) {
@@ -68,16 +83,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/return-items - Create new return item
+// POST /api/return-items - Create new return item (authenticated or anonymous)
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireAuth(request);
-
-    if (authResult.error) {
-      return authResult.error;
-    }
-
-    const userId = authResult.user.id;
+    const { userId } = await getUserOrAnonymous(request);
     const body = await request.json();
 
     // Validate input
@@ -96,7 +105,13 @@ export async function POST(request: NextRequest) {
 
     // Get retailer policy to calculate deadline
     const [retailer] = await db
-      .select()
+      .select({
+        id: retailerPolicies.id,
+        name: retailerPolicies.name,
+        returnWindowDays: retailerPolicies.returnWindowDays,
+        websiteUrl: retailerPolicies.websiteUrl,
+        hasFreeReturns: retailerPolicies.hasFreeReturns,
+      })
       .from(retailerPolicies)
       .where(eq(retailerPolicies.id, retailer_id))
       .limit(1);
@@ -131,7 +146,7 @@ export async function POST(request: NextRequest) {
       .returning();
 
     // Fetch complete item with retailer info
-    const [completeItem] = await db
+    const [item] = await db
       .select({
         id: returnItems.id,
         retailer_id: returnItems.retailerId,
@@ -143,7 +158,9 @@ export async function POST(request: NextRequest) {
         purchase_date: returnItems.purchaseDate,
         return_deadline: returnItems.returnDeadline,
         is_returned: returnItems.isReturned,
+        is_kept: returnItems.isKept,
         returned_date: returnItems.returnedDate,
+        kept_date: returnItems.keptDate,
         user_id: returnItems.userId,
         created_at: returnItems.createdAt,
         updated_at: returnItems.updatedAt,
@@ -162,6 +179,19 @@ export async function POST(request: NextRequest) {
       )
       .where(eq(returnItems.id, newItem.id))
       .limit(1);
+
+    // Format response to match iOS expectations
+    const completeItem = {
+      ...item,
+      price: item.price ? parseFloat(item.price) : null,
+      price_usd: item.price_usd ? parseFloat(item.price_usd) : null,
+      purchase_date: item.purchase_date.toISOString(),
+      return_deadline: item.return_deadline.toISOString(),
+      returned_date: item.returned_date ? item.returned_date.toISOString() : null,
+      kept_date: item.kept_date ? item.kept_date.toISOString() : null,
+      created_at: item.created_at.toISOString(),
+      updated_at: item.updated_at.toISOString(),
+    };
 
     return successResponse(completeItem, 201);
   } catch (error) {
