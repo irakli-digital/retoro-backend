@@ -21,6 +21,10 @@
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
     "@types/bcryptjs": "^2.4.6",
