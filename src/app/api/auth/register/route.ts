@@ -59,19 +59,34 @@ export async function POST(request: NextRequest) {
 
     // Migrate anonymous user data if anonymous_user_id provided
     if (anonymous_user_id) {
+      // Find the temporary anonymous user by email
+      const anonymousEmail = `${anonymous_user_id}@anonymous.temp`;
+      const [anonymousUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, anonymousEmail))
+        .limit(1);
+
+      if (anonymousUser) {
+        // Migrate return items from anonymous user to new user
+        await db
+          .update(returnItems)
+          .set({ userId: newUser.id })
+          .where(eq(returnItems.userId, anonymousUser.id));
+
+        // Delete the temporary anonymous user
+        await db
+          .delete(users)
+          .where(eq(users.id, anonymousUser.id));
+
+        console.log(`Migrated anonymous data for ${anonymous_user_id} to user ${newUser.id}`);
+      }
+
       // Find sessions with this anonymous ID and migrate them
       await db
         .update(sessions)
         .set({ userId: newUser.id })
         .where(eq(sessions.anonymousUserId, anonymous_user_id));
-
-      // Migrate return items from anonymous user to new user
-      await db
-        .update(returnItems)
-        .set({ userId: newUser.id })
-        .where(eq(returnItems.userId, anonymous_user_id));
-
-      console.log(`Migrated anonymous data for ${anonymous_user_id} to user ${newUser.id}`);
     }
 
     // Create session

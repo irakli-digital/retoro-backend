@@ -52,8 +52,39 @@ export async function getUserOrAnonymous(request: NextRequest): Promise<{
     throw new Error("No user ID or anonymous ID provided");
   }
 
+  // For anonymous users, we need to create or find a user record
+  // because return_items.userId must reference users.id (UUID)
+  const { db } = await import("../db");
+  const { users } = await import("../db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  // Check if we already have a user for this anonymous ID
+  let existingUsers = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, `${anonymousId}@anonymous.temp`))
+    .limit(1);
+
+  if (existingUsers.length > 0) {
+    return {
+      userId: existingUsers[0].id,
+      isAnonymous: true,
+    };
+  }
+
+  // Create a temporary user for this anonymous ID
+  const [newUser] = await db
+    .insert(users)
+    .values({
+      email: `${anonymousId}@anonymous.temp`,
+      password: null, // No password for anonymous users
+      name: "Anonymous User",
+      emailVerified: false,
+    })
+    .returning({ id: users.id });
+
   return {
-    userId: anonymousId,
+    userId: newUser.id,
     isAnonymous: true,
   };
 }
