@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search");
 
-    let query = db
+    // Build query with optional search filter
+    const retailers = await db
       .select({
         id: retailerPolicies.id,
         name: retailerPolicies.name,
@@ -25,17 +26,13 @@ export async function GET(request: NextRequest) {
         website_url: retailerPolicies.websiteUrl,
         has_free_returns: retailerPolicies.hasFreeReturns,
       })
-      .from(retailerPolicies);
-
-    // Apply search filter if provided
-    if (search && search.trim() !== "") {
-      query = query.where(
-        ilike(retailerPolicies.name, `%${search.trim()}%`)
-      );
-    }
-
-    // Order by name
-    const retailers = await query.orderBy(retailerPolicies.name);
+      .from(retailerPolicies)
+      .where(
+        search && search.trim() !== ""
+          ? ilike(retailerPolicies.name, `%${search.trim()}%`)
+          : undefined
+      )
+      .orderBy(retailerPolicies.name);
 
     return successResponse(retailers);
   } catch (error) {
@@ -59,7 +56,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validation = createRetailerSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const {

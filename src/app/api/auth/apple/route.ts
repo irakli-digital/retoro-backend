@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validation = appleAuthSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const { identity_token, user_data, anonymous_user_id } = validation.data;

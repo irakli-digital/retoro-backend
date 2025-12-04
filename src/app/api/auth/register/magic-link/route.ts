@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validation = magicLinkSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const { email, name, anonymous_user_id } = validation.data;

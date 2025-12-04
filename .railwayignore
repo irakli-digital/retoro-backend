@@ -1,0 +1,11 @@
+# Files to ignore when deploying to Railway
+node_modules/
+.next/
+.git/
+.env
+.env.local
+*.log
+.DS_Store
+drizzle/
+run-oauth-migration.js
+add-oauth-fields.sql

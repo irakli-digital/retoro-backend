@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validation = loginSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const { email, password, anonymous_user_id } = validation.data;

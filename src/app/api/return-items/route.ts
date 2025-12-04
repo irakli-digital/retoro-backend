@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validation = createReturnItemSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const {
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     const [newItem] = await db
       .insert(returnItems)
       .values({
-        userId,
+        userId: userId,
         retailerId: retailer_id,
         name: name || null,
         price: price ? price.toString() : null,
@@ -142,6 +142,7 @@ export async function POST(request: NextRequest) {
         returnDeadline: deadline,
         isReturned: false,
         isKept: false,
+        updatedAt: new Date(),
       })
       .returning();
 

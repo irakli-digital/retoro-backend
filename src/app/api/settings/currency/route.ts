@@ -55,7 +55,7 @@ export async function PUT(request: NextRequest) {
     // Validate input
     const validation = updateCurrencySchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const { currency } = validation.data;

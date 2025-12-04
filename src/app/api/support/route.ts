@@ -5,7 +5,7 @@ import {
   errorResponse,
   validationErrorResponse,
 } from "@/lib/utils/api-response";
-import { sendEmail } from "@/lib/utils/email";
+import { sendSupportEmail } from "@/lib/utils/email";
 import { z } from "zod";
 
 const supportRequestSchema = z.object({
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validation = supportRequestSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const { subject, message, email } = validation.data;
@@ -32,49 +32,35 @@ export async function POST(request: NextRequest) {
     const senderEmail = email || (userInfo.isAnonymous ? "anonymous@retoro.app" : "user@retoro.app");
 
     // Send support email
-    const emailSent = await sendEmail({
-      to: process.env.SUPPORT_EMAIL || "support@retoro.app",
-      subject: `Support Request: ${subject}`,
-      text: `
+    const emailMessage = `
 From: ${senderEmail}
 User ID: ${userInfo.userId}
 Is Anonymous: ${userInfo.isAnonymous}
 
-Subject: ${subject}
-
 Message:
 ${message}
-      `.trim(),
-      html: `
-<div style="font-family: Arial, sans-serif;">
-  <h2>Support Request</h2>
-  <p><strong>From:</strong> ${senderEmail}</p>
-  <p><strong>User ID:</strong> ${userInfo.userId}</p>
-  <p><strong>Anonymous:</strong> ${userInfo.isAnonymous ? "Yes" : "No"}</p>
-  <hr>
-  <h3>${subject}</h3>
-  <p>${message.replace(/\n/g, "<br>")}</p>
-</div>
-      `.trim(),
-    });
+    `.trim();
 
-    if (!emailSent) {
+    try {
+      await sendSupportEmail(senderEmail, subject, emailMessage);
+
+      console.log("Support request sent:", {
+        userId: userInfo.userId,
+        subject,
+      });
+    } catch (error) {
       // Log the support request even if email fails
-      console.log("Support request (email failed):", {
+      console.error("Support request (email failed):", {
         userId: userInfo.userId,
         isAnonymous: userInfo.isAnonymous,
         email: senderEmail,
         subject,
         message,
+        error,
       });
 
       return errorResponse("Failed to send support request. Please try again later.", 500);
     }
-
-    console.log("Support request sent:", {
-      userId: userInfo.userId,
-      subject,
-    });
 
     return successResponse({
       message: "Support request sent successfully. We'll get back to you soon.",

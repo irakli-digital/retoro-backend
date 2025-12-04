@@ -94,7 +94,7 @@ export async function PUT(
     // Validate input
     const validation = updateReturnItemSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const data = validation.data;
@@ -209,7 +209,7 @@ export async function PATCH(
     // Validate input
     const validation = patchReturnItemSchema.safeParse(body);
     if (!validation.success) {
-      return validationErrorResponse(validation.error.errors);
+      return validationErrorResponse(validation.error.issues);
     }
 
     const data = validation.data;

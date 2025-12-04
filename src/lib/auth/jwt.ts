@@ -14,8 +14,8 @@ export interface JWTPayload {
   sessionId: string;
 }
 
-export function generateToken(payload: JWTPayload, expiresIn: string = "7d"): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+export function generateToken(payload: JWTPayload, expiresIn: string | number = "7d"): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn as string });
 }
 
 export function verifyToken(token: string): JWTPayload | null {
@@ -27,7 +27,7 @@ export function verifyToken(token: string): JWTPayload | null {
 }
 
 export function generateRefreshToken(userId: string): string {
-  return jwt.sign({ userId }, JWT_REFRESH_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ userId }, JWT_REFRESH_SECRET, { expiresIn: "30d" as string });
 }
 
 export function verifyRefreshToken(token: string): { userId: string } | null {
