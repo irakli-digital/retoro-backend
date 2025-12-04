@@ -48,18 +48,44 @@ export async function POST(request: NextRequest) {
     n8nFormData.append("user_id", userInfo.userId);
     n8nFormData.append("is_anonymous", userInfo.isAnonymous.toString());
 
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "X-API-Key": process.env.RETORO_API_KEY || "",
-        "X-User-ID": userInfo.userId,
-      },
-      body: n8nFormData,
+    console.log("📤 Forwarding to n8n webhook:", webhookUrl);
+    console.log("📦 Payload:", {
+      fileName: file.name,
+      fileSize: buffer.length,
+      fileType: file.type,
+      userId: userInfo.userId,
+      isAnonymous: userInfo.isAnonymous,
     });
 
+    let response;
+    try {
+      response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: {
+          "X-API-Key": process.env.RETORO_API_KEY || "",
+          "X-User-ID": userInfo.userId,
+        },
+        body: n8nFormData,
+      });
+    } catch (fetchError: any) {
+      console.error("❌ n8n webhook fetch error:", fetchError.message);
+      return errorResponse(
+        `Failed to connect to invoice processor: ${fetchError.message}`,
+        500
+      );
+    }
+
     if (!response.ok) {
-      console.error("n8n webhook error:", await response.text());
-      return errorResponse("Failed to process invoice", 500);
+      const errorText = await response.text();
+      console.error("❌ n8n webhook error:", {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+      });
+      return errorResponse(
+        `Invoice processor error (${response.status}): ${errorText}`,
+        500
+      );
     }
 
     const result = await response.json();
