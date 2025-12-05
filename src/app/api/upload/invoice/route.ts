@@ -38,43 +38,34 @@ export async function POST(request: NextRequest) {
       return errorResponse("Invoice processing is not configured", 500);
     }
 
-    // Convert file to buffer and base64
+    // Convert file to buffer
     const buffer = Buffer.from(await file.arrayBuffer());
-    const base64Data = buffer.toString("base64");
-
-    // Create data URL in the format Mistral OCR expects
-    const dataUrl = `data:${file.type};base64,${base64Data}`;
-
-    // Prepare JSON payload for n8n webhook
-    const payload = {
-      document: dataUrl,
-      document_name: file.name,
-      user_id: userInfo.userId,
-      is_anonymous: userInfo.isAnonymous,
-      file_type: file.type,
-      file_size: buffer.length,
-    };
 
     console.log("📤 Forwarding to n8n webhook:", webhookUrl);
-    console.log("📦 Payload:", {
+    console.log("📦 File info:", {
       fileName: file.name,
       fileSize: buffer.length,
       fileType: file.type,
       userId: userInfo.userId,
       isAnonymous: userInfo.isAnonymous,
-      dataUrlPrefix: dataUrl.substring(0, 50) + "...", // Log first 50 chars
     });
+
+    // Send as multipart/form-data with actual binary file
+    const webhookFormData = new FormData();
+    const blob = new Blob([buffer], { type: file.type });
+    webhookFormData.append("data", blob, file.name);
+    webhookFormData.append("user_id", userInfo.userId);
+    webhookFormData.append("is_anonymous", String(userInfo.isAnonymous));
 
     let response;
     try {
       response = await fetch(webhookUrl, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "X-API-Key": process.env.RETORO_API_KEY || "",
           "X-User-ID": userInfo.userId,
         },
-        body: JSON.stringify(payload),
+        body: webhookFormData,
       });
     } catch (fetchError: any) {
       console.error("❌ n8n webhook fetch error:", fetchError.message);

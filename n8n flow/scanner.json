@@ -1,0 +1,781 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "create-retailer-condition",
+                "leftValue": "={{ $json.retailer_found }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1120,
+          5024
+        ],
+        "id": "7b7a9187-85dd-4420-9271-6b45b5dc52ce",
+        "name": "Check If Retailer Exists1"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $('Edit Fields1').item.json.RETORO_API_URL }}/retailers",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "name",
+                "value": "={{ $json.retailer_name }}"
+              },
+              {
+                "name": "return_window_days",
+                "value": "={{ $json.default_return_window_days || 30 }}"
+              },
+              {
+                "name": "website_url",
+                "value": "={{ $json.retailer_name.includes('.') ? 'https://' + $json.retailer_name : null }}"
+              },
+              {
+                "name": "has_free_returns",
+                "value": "=false"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "0d442f10-e111-432e-a480-60d5c3cd5dc5",
+        "name": "Create Retailer1",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.1,
+        "position": [
+          1344,
+          5104
+        ],
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "6uoywV79GxAzcFU4",
+            "name": "RTR - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// After creating retailer, format it to match the expected structure\nconst createdRetailer = $input.item.json;\nconst parseData = $('Parse Invoice Data').item.json;\n\nconsole.log('Created retailer:', createdRetailer);\nconsole.log('Parse data:', parseData);\n\n// Ensure items array is preserved for Split Items node\nreturn {\n  json: {\n    retailer_id: createdRetailer.id,\n    retailer_name: createdRetailer.name,\n    retailer_found: true,\n    seller_name: parseData.seller_name,\n    total_amount: parseData.total_amount,\n    items: parseData.items || [], // Ensure items array is preserved\n    user_id: parseData.user_id, // Preserve user_id\n    raw_response: parseData.raw_response\n  }\n};"
+        },
+        "id": "13829de7-543d-4ec7-8f8a-306958079c48",
+        "name": "Format Created Retailer1",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1568,
+          5104
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Process all items in runOnceForAllItems mode\nconst results = [];\n\n// Get user_id from webhook body (sent as form field)\nconst webhookData = $('Webhook Trigger').item.json;\nconst userId = webhookData.user_id || webhookData.body?.user_id || '';\n\nconsole.log('=== Parse Invoice Data ===');\nconsole.log('Webhook data keys:', Object.keys(webhookData));\nconsole.log('User ID:', userId);\n\nfor (const input of $input.all()) {\n  let invoiceData;\n  \n  try {\n    let content;\n    \n    // Handle the specific Mistral/Claude response format\n    if (input.json.output && Array.isArray(input.json.output) && input.json.output[0]) {\n      // Your specific format: output[0].content[0].text\n      const message = input.json.output[0];\n      if (message.content && Array.isArray(message.content) && message.content[0]) {\n        content = message.content[0].text;\n      }\n    }\n    // Fallback for other AI response formats\n    else if (input.json.choices && input.json.choices[0]?.message?.content) {\n      content = input.json.choices[0].message.content;\n    } \n    else if (input.json.content) {\n      content = input.json.content;\n    } \n    else if (typeof input.json === 'string') {\n      content = input.json;\n    } \n    else {\n      content = JSON.stringify(input.json);\n    }\n    \n    // If content is already an object, use it directly\n    if (typeof content === 'object') {\n      invoiceData = content;\n    } else {\n      // Extract JSON from string content (handle markdown code blocks)\n      const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)```/) || content.match(/\\{[\\s\\S]*\\}/);\n      \n      if (jsonMatch) {\n        const jsonString = jsonMatch[1] || jsonMatch[0];\n        invoiceData = JSON.parse(jsonString.trim());\n      } else {\n        invoiceData = JSON.parse(content);\n      }\n    }\n    \n  } catch (e) {\n    throw new Error(`Failed to parse invoice data: ${e.message}. Response: ${JSON.stringify(input.json)}`);\n  }\n  \n  // Validate required fields (matching your schema)\n  if (!invoiceData.seller_name) {\n    throw new Error('Seller name not found in invoice');\n  }\n  \n  if (!invoiceData.items || !Array.isArray(invoiceData.items) || invoiceData.items.length === 0) {\n    throw new Error('No items found in invoice');\n  }\n  \n  // Map items to ensure all required fields exist\n  const mappedItems = invoiceData.items.map(item => ({\n    item_name: item.item_name || 'Unnamed Item',\n    item_cost: item.item_cost || 0,\n    item_quantity: item.item_quantity || 1,\n    item_currency: item.item_currency || 'USD',\n    currency_symbol: item.currency_symbol || ''\n  }));\n  \n  // Calculate total if not provided\n  const totalAmount = mappedItems.reduce((sum, item) => \n    sum + (item.item_cost * item.item_quantity), 0\n  );\n  \n  results.push({\n    json: {\n      seller_name: invoiceData.seller_name,\n      total_amount: totalAmount,\n      items: mappedItems,\n      user_id: userId, // Preserve user_id from webhook\n      raw_response: input.json // Keep original for debugging\n    }\n  });\n}\n\nreturn results;"
+        },
+        "id": "d56cdbc9-89f1-48ad-a882-111df0e30141",
+        "name": "Parse Invoice Data",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          224,
+          5024
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.RETORO_API_URL }}/retailers?search={{ encodeURIComponent($json.seller_name) }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "0cd3990e-e314-4bcb-b1d5-ef3f19118525",
+        "name": "Search Retailer",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.1,
+        "position": [
+          672,
+          5024
+        ],
+        "alwaysOutputData": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "6uoywV79GxAzcFU4",
+            "name": "RTR - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $('Edit Fields1').item.json.RETORO_API_URL }}/return-items",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "retailer_id",
+                "value": "={{ $json.retailer_id }}"
+              },
+              {
+                "name": "name",
+                "value": "={{ $json.item_name }}"
+              },
+              {
+                "name": "price",
+                "value": "={{ $json.item_cost }}"
+              },
+              {
+                "name": "currency",
+                "value": "={{ $json.item_currency }}"
+              },
+              {
+                "name": "currency_symbol",
+                "value": "={{ $json.currency_symbol }}"
+              },
+              {
+                "name": "quantity",
+                "value": "={{ $json.item_quantity }}"
+              },
+              {
+                "name": "purchase_date",
+                "value": "={{ $json.purchase_date || new Date().toISOString() }}"
+              },
+              {
+                "name": "user_id",
+                "value": "={{ $('Webhook Trigger').item.json.user_id || $('Webhook Trigger').item.json.body?.user_id }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "075e676f-28e5-4abd-b172-8adf09eed762",
+        "name": "Create Return Item",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.1,
+        "position": [
+          2016,
+          5024
+        ],
+        "alwaysOutputData": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "6uoywV79GxAzcFU4",
+            "name": "RTR - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Aggregate results\nconst items = $input.all();\n\n// Map detailed item information including currency fields\nconst itemsCreated = items.map(item => ({\n  id: item.json.id || item.json.item_id,\n  name: item.json.name,\n  price: item.json.price,\n  currency: item.json.currency,\n  currency_symbol: item.json.currency_symbol,\n  quantity: item.json.quantity\n}));\n\n// Get retailer name from Match Retailer node\nconst retailerName = $('Match Retailer').item.json.retailer_name;\n\nreturn {\n  json: {\n    items_created: itemsCreated,\n    retailer_matched: retailerName,\n    items_count: itemsCreated.length,\n    errors: []\n  }\n};"
+        },
+        "id": "23454876-bf3e-4f8b-a13f-721c2fe6a392",
+        "name": "Aggregate Results",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          5024
+        ]
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "chatgpt-4o-latest",
+            "mode": "list",
+            "cachedResultName": "CHATGPT-4O-LATEST"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=You are an invoice data extraction assistant. Extract the following information from invoices, receipts, or payment confirmations from the text below:\n\n{{ $json.pages ? $json.pages[0].markdown : $json.text }}{{ $('Extract text1').item.json.pages[0].markdown }}\n\nREQUIRED FIELDS:\n- seller_name: The company/merchant name (seller)\n- items: Array of purchased items/services with:\n  - item_name: Product or service name\n  - item_cost: Price per unit (numeric value only, no currency symbol)\n  - item_quantity: Number of units (default to 1 if not specified)\n  - item_currency: Currency code (e.g., GEL, USD, EUR)\n  - currency_symbol: Currency symbol if visible (e.g., $, €, ₾, ₹), otherwise use empty string \"\"\n\nEXTRACTION RULES:\n1. If multiple items exist, create separate entries in the items array\n2. Extract only numeric values for costs (remove currency symbols)\n3. Use standard 3-letter currency codes (ISO 4217)\n4. For currency_symbol: Extract the symbol if clearly visible in the document (e.g., $, €, ₾, ₹). If not visible or unclear, use an empty string \"\".\n5. If quantity is not mentioned, assume quantity = 1\n\nOUTPUT FORMAT:\nReturn valid JSON matching the provided schema. Do not include any explanatory text outside the JSON.\n```\n\n---\n\n## **JSON Schema:**\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"seller_name\": {\n      \"type\": \"string\",\n      \"description\": \"Company or merchant name\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"description\": \"List of purchased items\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"item_name\": {\n            \"type\": \"string\",\n            \"description\": \"Product or service name\"\n          },\n          \"item_cost\": {\n            \"type\": \"number\",\n            \"description\": \"Price per unit (numeric only)\"\n          },\n          \"item_quantity\": {\n            \"type\": \"integer\",\n            \"description\": \"Number of units purchased\",\n            \"default\": 1\n          },\n          \"item_currency\": {\n            \"type\": \"string\",\n            \"description\": \"Currency code (ISO 4217)\",\n            \"pattern\": \"^[A-Z]{3}$\"\n          },\n          \"currency_symbol\": {\n            \"type\": \"string\",\n            \"description\": \"Currency symbol (e.g., $, €, ₾, ₹)\"\n          }\n        },\n        \"required\": [\"item_name\", \"item_cost\", \"item_quantity\", \"item_currency\"],\n        \"additionalProperties\": false\n      },\n      \"minItems\": 1\n    }\n  },\n  \"required\": [\"seller_name\", \"items\"],\n  \"additionalProperties\": false\n}\n```\n\n---\n\n## **Expected Output for our Example:**\n\n```json\n{\n  \"seller_name\": \"mypen.ge\",\n  \"items\": [\n    {\n      \"item_name\": \"Mypen PRO Subscription\",\n      \"item_cost\": 29.0,\n      \"item_quantity\": 1,\n      \"item_currency\": \"GEL\",\n      \"currency_symbol\": \"₾\"\n    }\n  ]\n}\n```\n\n---\n\n## **For Multiple Items Example:**\n\nIf the invoice had multiple items, it would look like:\n\n```json\n{\n  \"seller_name\": \"mypen.ge\",\n  \"items\": [\n    {\n      \"item_name\": \"Mypen PRO Subscription\",\n      \"item_cost\": 29.0,\n      \"item_quantity\": 1,\n      \"item_currency\": \"GEL\",\n      \"currency_symbol\": \"₾\"\n    },\n    {\n      \"item_name\": \"Premium Support\",\n      \"item_cost\": 15.0,\n      \"item_quantity\": 2,\n      \"item_currency\": \"GEL\",\n      \"currency_symbol\": \"₾\"\n    }\n  ]\n}\n"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "textFormat": {
+              "textOptions": {
+                "type": "json_schema",
+                "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"seller_name\": {\n      \"type\": \"string\",\n      \"description\": \"Company or merchant name\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"description\": \"List of purchased items\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"item_name\": {\n            \"type\": \"string\",\n            \"description\": \"Product or service name\"\n          },\n          \"item_cost\": {\n            \"type\": \"number\",\n            \"description\": \"Price per unit (numeric only)\"\n          },\n          \"item_quantity\": {\n            \"type\": \"integer\",\n            \"description\": \"Number of units purchased\",\n            \"default\": 1\n          },\n          \"item_currency\": {\n            \"type\": \"string\",\n            \"description\": \"Currency code (ISO 4217)\",\n            \"pattern\": \"^[A-Z]{3}$\"\n          },\n          \"currency_symbol\": {\n            \"type\": \"string\",\n            \"description\": \"Currency symbol (e.g., $, €, ₾, ₹). Use empty string if not visible.\"\n          }\n        },\n        \"required\": [\"item_name\", \"item_cost\", \"item_quantity\", \"item_currency\", \"currency_symbol\"],\n        \"additionalProperties\": false\n      },\n      \"minItems\": 1\n    }\n  },\n  \"required\": [\"seller_name\", \"items\"],\n  \"additionalProperties\": false\n}"
+              }
+            }
+          }
+        },
+        "id": "3623ea90-4762-41c1-9ef2-6384a4e6e5d6",
+        "name": "Extract Invoice Data with AI1",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2,
+        "position": [
+          -128,
+          5024
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "eJNHP6n8O3Y9Iv2F",
+            "name": "Open Ai - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "fieldToSplitOut": "items",
+          "include": "allOtherFields",
+          "options": {}
+        },
+        "id": "3d6f7d1b-c081-4726-a5ec-77ef9947c597",
+        "name": "Split Items",
+        "type": "n8n-nodes-base.splitOut",
+        "typeVersion": 1,
+        "position": [
+          1792,
+          5024
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "b0fd4581-9d46-46c0-8b2f-6dcefab9c854",
+                "name": "RETORO_API_KEY",
+                "value": "299f5ca754fa16718420949736b75abb139ff5018f792a00c961b99a97716fa7",
+                "type": "string"
+              },
+              {
+                "id": "05cf9493-ddc9-47dd-8de8-520eeab97809",
+                "name": "RETORO_API_URL",
+                "value": "https://your.retoro.app/api",
+                "type": "string"
+              },
+              {
+                "id": "user-id-field",
+                "name": "user_id",
+                "value": "={{ $json.user_id }}",
+                "type": "string"
+              }
+            ]
+          },
+          "includeOtherFields": true,
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          448,
+          5024
+        ],
+        "id": "c6d5d1cb-7987-4455-beaa-6397ccf957a2",
+        "name": "Edit Fields1"
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.mistralAi",
+        "typeVersion": 1,
+        "position": [
+          -928,
+          5024
+        ],
+        "id": "3f2ddd51-8fe7-45c8-863e-dcb36ef27cf3",
+        "name": "Extract text1",
+        "credentials": {
+          "mistralCloudApi": {
+            "id": "WZEuqlC6d4b4G4dV",
+            "name": "Mistral Cloud account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "invoice-process",
+          "responseMode": "lastNode",
+          "options": {
+            "binaryData": true,
+            "binaryPropertyName": "data"
+          }
+        },
+        "id": "13eb694a-d0b2-4712-a289-92d1f288db3c",
+        "name": "Webhook Trigger",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [
+          -1584,
+          5120
+        ],
+        "webhookId": "invoice-process"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "f5fdbe7c-70b0-4d3c-8aa7-bb9fb19735ce",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          2464,
+          5024
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// IMPORTANT: HTTP node splits arrays into individual items\n// So $input.item.json is the retailer object itself, not an array!\nconst searchResult = $input.item.json;\n\nconsole.log('=== Match Retailer Debug ===');\nconsole.log('Search result:', JSON.stringify(searchResult, null, 2));\n\n// Get seller name from invoice\nconst invoiceRetailerName = $('Parse Invoice Data').item.json.seller_name;\nconst invoiceRetailerNameLower = invoiceRetailerName.toLowerCase().trim();\n\nconsole.log('Looking for retailer:', invoiceRetailerNameLower);\n\n// Check if we have a valid retailer object\nif (!searchResult || !searchResult.id) {\n  console.log('❌ No valid retailer data received');\n  return {\n    json: {\n      retailer_found: false,\n      retailer_name: invoiceRetailerName,\n      needs_creation: true,\n      default_return_window_days: 30,\n      ...$('Parse Invoice Data').item.json\n    }\n  };\n}\n\n// We have a retailer! Now check if it matches\nconst retailerName = (searchResult.name || '').toLowerCase().trim();\nconst retailerId = (searchResult.id || '').toLowerCase().trim();\n\nconsole.log('Found retailer:', retailerName, '(ID:', retailerId, ')');\n\n// Check if names match (they should since we searched by name)\nconst isMatch = retailerName === invoiceRetailerNameLower ||\n                retailerId.includes(invoiceRetailerNameLower) ||\n                invoiceRetailerNameLower.includes(retailerName);\n\nif (isMatch) {\n  console.log('✅ MATCH CONFIRMED:', searchResult.name);\n  return {\n    json: {\n      retailer_found: true,\n      retailer_id: searchResult.id,\n      retailer_name: searchResult.name,\n      return_window_days: searchResult.return_window_days || 30,\n      website_url: searchResult.website_url,\n      has_free_returns: searchResult.has_free_returns || false,\n      policy_description: searchResult.policy_description,\n      ...$('Parse Invoice Data').item.json\n    }\n  };\n} else {\n  console.log('❌ No match:', retailerName, 'vs', invoiceRetailerNameLower);\n  return {\n    json: {\n      retailer_found: false,\n      retailer_name: invoiceRetailerName,\n      needs_creation: true,\n      default_return_window_days: 30,\n      ...$('Parse Invoice Data').item.json\n    }\n  };\n}"
+        },
+        "id": "d4073eb0-1318-416f-bf86-84211d750a7f",
+        "name": "Match Retailer",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          896,
+          5024
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "id-1",
+                "leftValue": "={{ $binary.data.mimeType }}",
+                "rightValue": "image/",
+                "operator": {
+                  "type": "string",
+                  "operation": "startsWith"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "ca960849-93e2-4b7c-8186-33e695d080c2",
+        "name": "Check File Type",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -1360,
+          5120
+        ]
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "chatgpt-4o-latest",
+            "mode": "list",
+            "cachedResultName": "CHATGPT-4O-LATEST"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=Analyze the following text extracted from an uploaded document and determine if it is an invoice, receipt, or payment confirmation.\n\nText to analyze:\n{{ $json.pages[0].markdown }}\n\nYour task:\n1. Determine if this document is an invoice, receipt, or payment confirmation\n2. Look for indicators such as:\n   - Seller/merchant name\n   - Itemized list of products or services\n   - Prices and totals\n   - Payment information\n   - Invoice/receipt numbers\n   - Dates\n\nReturn ONLY a JSON object with this structure:\n{\n  \"is_valid_invoice\": true/false,\n  \"document_type\": \"invoice\" | \"receipt\" | \"payment_confirmation\" | \"other\",\n  \"confidence\": 0.0-1.0\n}\n\nIf the document is clearly NOT an invoice/receipt/payment confirmation (e.g., random image, screenshot, document without purchase information), set is_valid_invoice to false."
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "textFormat": {
+              "textOptions": {
+                "type": "json_schema",
+                "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"is_valid_invoice\": {\n      \"type\": \"boolean\",\n      \"description\": \"Whether this is a valid invoice, receipt, or payment confirmation\"\n    },\n    \"document_type\": {\n      \"type\": \"string\",\n      \"enum\": [\"invoice\", \"receipt\", \"payment_confirmation\", \"other\"],\n      \"description\": \"Type of document\"\n    },\n    \"confidence\": {\n      \"type\": \"number\",\n      \"minimum\": 0,\n      \"maximum\": 1,\n      \"description\": \"Confidence level (0.0 to 1.0)\"\n    }\n  },\n  \"required\": [\"is_valid_invoice\", \"document_type\", \"confidence\"],\n  \"additionalProperties\": false\n}"
+              }
+            }
+          }
+        },
+        "id": "8f7f039d-bc2b-460c-8aad-d47687e75910",
+        "name": "Validate Invoice1",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2,
+        "position": [
+          -704,
+          5120
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "eJNHP6n8O3Y9Iv2F",
+            "name": "Open Ai - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "invoice-validation-condition",
+                "leftValue": "={{ $json.output[0].content[0].text.is_valid_invoice }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -352,
+          5120
+        ],
+        "id": "8dc5dcd7-6bf8-463a-835d-76df0a24bd26",
+        "name": "Check If Invoice2"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "eee9fc98-876a-4936-82c5-7d32968def49",
+        "name": "Respond with Error1",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          224,
+          5216
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Get user_id from webhook query parameters\nconst webhookData = $('Webhook Trigger').item.json;\nconst userId = webhookData.query?.user_id || webhookData.user_id || webhookData.userId;\n\n// Get validation result from Validate Invoice1 node\nconst validationData = $('Validate Invoice1').item.json;\nconst validationResult = validationData.output[0].content[0].text;\n\nreturn {\n  json: {\n    error: true,\n    message: \"Sorry, this is not a valid invoice. Please add your purchase manually using the form above.\",\n    document_type: validationResult.document_type || \"other\",\n    confidence: validationResult.confidence || 0,\n    user_id: userId\n  }\n};"
+        },
+        "id": "1a68228d-9782-4b54-9489-f80a4b980506",
+        "name": "Format Error Response - No Invoice",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -64,
+          5216
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.mistralAi",
+        "typeVersion": 1,
+        "position": [
+          -928,
+          5216
+        ],
+        "id": "9459ec82-1421-4dc5-9fd0-54b7555e110d",
+        "name": "Extract text",
+        "credentials": {
+          "mistralCloudApi": {
+            "id": "WZEuqlC6d4b4G4dV",
+            "name": "Mistral Cloud account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Prepare image document for Mistral OCR\n// Backend sends: { document: 'data:image/jpeg;base64,...', file_type: 'image/jpeg', ... }\n// Mistral node requires BINARY data, not JSON URL\n\nconst input = $input.item.json;\n\nconsole.log('=== Prepare Image Document ===');\nconsole.log('Full input keys:', Object.keys(input));\n\n// Try different possible locations for the document data\nlet documentData = input.document || input.body?.document || input.data?.document;\nlet fileName = input.document_name || input.body?.document_name || input.data?.document_name || 'image.jpg';\nlet userId = input.user_id || input.body?.user_id || input.data?.user_id;\nlet isAnonymous = input.is_anonymous || input.body?.is_anonymous || input.data?.is_anonymous;\nlet fileType = input.file_type || input.body?.file_type || input.data?.file_type || 'image/jpeg';\nlet fileSize = input.file_size || input.body?.file_size || input.data?.file_size;\n\nconsole.log('Resolved file_type:', fileType);\nconsole.log('Resolved document prefix:', documentData ? documentData.substring(0, 80) + '...' : 'NOT FOUND');\n\nif (!documentData) {\n  const availableKeys = Object.keys(input);\n  const bodyKeys = input.body ? Object.keys(input.body) : [];\n  const dataKeys = input.data ? Object.keys(input.data) : [];\n  throw new Error(`No document data found. Top-level keys: [${availableKeys.join(', ')}], body keys: [${bodyKeys.join(', ')}], data keys: [${dataKeys.join(', ')}]`);\n}\n\n// Parse data URL: data:image/jpeg;base64,/9j/4AAQ...\nconst matches = documentData.match(/^data:([^;]+);base64,(.+)$/);\nif (!matches) {\n  throw new Error('Invalid data URL format. Expected: data:<mime>;base64,<data>');\n}\n\nconst mimeType = matches[1];\nconst base64Data = matches[2];\n\nconsole.log('Parsed MIME type:', mimeType);\nconsole.log('Base64 data length:', base64Data.length);\n\n// Convert base64 to Buffer for binary output\nconst binaryData = Buffer.from(base64Data, 'base64');\n\n// Return item with binary data attached (required by Mistral node)\nreturn {\n  json: {\n    document_name: fileName,\n    user_id: userId,\n    is_anonymous: isAnonymous,\n    file_type: fileType,\n    file_size: fileSize\n  },\n  binary: {\n    data: {\n      data: base64Data,\n      mimeType: mimeType,\n      fileName: fileName\n    }\n  }\n};"
+        },
+        "id": "prepare-image-doc-node",
+        "name": "Prepare Image Document",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1136,
+          5024
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Prepare PDF document for Mistral OCR\n// Backend sends: { document: 'data:application/pdf;base64,...', file_type: 'application/pdf', ... }\n// Mistral node requires BINARY data, not JSON URL\n\nconst input = $input.item.json;\n\nconsole.log('=== Prepare PDF Document ===');\nconsole.log('Full input keys:', Object.keys(input));\n\n// Try different possible locations for the document data\nlet documentData = input.document || input.body?.document || input.data?.document;\nlet fileName = input.document_name || input.body?.document_name || input.data?.document_name || 'document.pdf';\nlet userId = input.user_id || input.body?.user_id || input.data?.user_id;\nlet isAnonymous = input.is_anonymous || input.body?.is_anonymous || input.data?.is_anonymous;\nlet fileType = input.file_type || input.body?.file_type || input.data?.file_type || 'application/pdf';\nlet fileSize = input.file_size || input.body?.file_size || input.data?.file_size;\n\nconsole.log('Resolved file_type:', fileType);\nconsole.log('Resolved document prefix:', documentData ? documentData.substring(0, 80) + '...' : 'NOT FOUND');\n\nif (!documentData) {\n  const availableKeys = Object.keys(input);\n  const bodyKeys = input.body ? Object.keys(input.body) : [];\n  const dataKeys = input.data ? Object.keys(input.data) : [];\n  throw new Error(`No document data found. Top-level keys: [${availableKeys.join(', ')}], body keys: [${bodyKeys.join(', ')}], data keys: [${dataKeys.join(', ')}]`);\n}\n\n// Parse data URL: data:application/pdf;base64,JVBERi0...\nconst matches = documentData.match(/^data:([^;]+);base64,(.+)$/);\nif (!matches) {\n  throw new Error('Invalid data URL format. Expected: data:<mime>;base64,<data>');\n}\n\nconst mimeType = matches[1];\nconst base64Data = matches[2];\n\nconsole.log('Parsed MIME type:', mimeType);\nconsole.log('Base64 data length:', base64Data.length);\n\n// Return item with binary data attached (required by Mistral node)\nreturn {\n  json: {\n    document_name: fileName,\n    user_id: userId,\n    is_anonymous: isAnonymous,\n    file_type: fileType,\n    file_size: fileSize\n  },\n  binary: {\n    data: {\n      data: base64Data,\n      mimeType: mimeType,\n      fileName: fileName\n    }\n  }\n};"
+        },
+        "id": "prepare-pdf-doc-node",
+        "name": "Prepare PDF Document",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1136,
+          5216
+        ]
+      }
+    ],
+    "connections": {
+      "Check If Retailer Exists1": {
+        "main": [
+          [
+            {
+              "node": "Split Items",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Create Retailer1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Retailer1": {
+        "main": [
+          [
+            {
+              "node": "Format Created Retailer1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Created Retailer1": {
+        "main": [
+          [
+            {
+              "node": "Split Items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Invoice Data": {
+        "main": [
+          [
+            {
+              "node": "Edit Fields1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Search Retailer": {
+        "main": [
+          [
+            {
+              "node": "Match Retailer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Return Item": {
+        "main": [
+          [
+            {
+              "node": "Aggregate Results",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aggregate Results": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Invoice Data with AI1": {
+        "main": [
+          [
+            {
+              "node": "Parse Invoice Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Split Items": {
+        "main": [
+          [
+            {
+              "node": "Create Return Item",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Edit Fields1": {
+        "main": [
+          [
+            {
+              "node": "Search Retailer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract text1": {
+        "main": [
+          [
+            {
+              "node": "Validate Invoice1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook Trigger": {
+        "main": [
+          [
+            {
+              "node": "Check File Type",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Match Retailer": {
+        "main": [
+          [
+            {
+              "node": "Check If Retailer Exists1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check File Type": {
+        "main": [
+          [
+            {
+              "node": "Extract text1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Extract text",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Invoice1": {
+        "main": [
+          [
+            {
+              "node": "Check If Invoice2",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check If Invoice2": {
+        "main": [
+          [
+            {
+              "node": "Extract Invoice Data with AI1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Format Error Response - No Invoice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Error Response - No Invoice": {
+        "main": [
+          [
+            {
+              "node": "Respond with Error1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract text": {
+        "main": [
+          [
+            {
+              "node": "Validate Invoice1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "c0320382499acc1816c05e1130ede806d6731eecdef3b30ac30aabf4236c8764"
+    }
+  }
