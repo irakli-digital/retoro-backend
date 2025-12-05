@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       console.error("Google OAuth error:", error);
       // Redirect back to app with error
       return NextResponse.redirect(
-        `retoro://google-auth?error=${encodeURIComponent(error)}&message=${encodeURIComponent("Google sign in failed")}`
+        `retoro://callback?error=${encodeURIComponent(error)}&message=${encodeURIComponent("Google sign in failed")}`
       );
     }
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     if (!code) {
       console.error("No authorization code received from Google");
       return NextResponse.redirect(
-        `retoro://google-auth?error=missing_code&message=${encodeURIComponent("No authorization code received")}`
+        `retoro://callback?error=missing_code&message=${encodeURIComponent("No authorization code received")}`
       );
     }
 
@@ -50,15 +50,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Get redirect URI from environment variable
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+    if (!redirectUri) {
+      console.error("GOOGLE_REDIRECT_URI not configured");
+      return NextResponse.redirect(
+        `retoro://callback?error=config_error&message=${encodeURIComponent("Google OAuth redirect URI not configured")}`
+      );
+    }
+
     // Exchange code for user info
-    const redirectUri = `${request.nextUrl.origin}/api/auth/google/callback`;
     let userInfo;
     try {
+      console.log("🔄 Exchanging Google code with redirect_uri:", redirectUri);
       userInfo = await exchangeGoogleCodeForUserInfo(code, redirectUri);
+      console.log("✅ Successfully exchanged code for user info:", userInfo.email);
     } catch (error: any) {
-      console.error("Failed to exchange Google code:", error);
+      console.error("❌ Failed to exchange Google code:", error);
       return NextResponse.redirect(
-        `retoro://google-auth?error=exchange_failed&message=${encodeURIComponent(error.message || "Failed to authenticate with Google")}`
+        `retoro://callback?error=auth_failed&message=${encodeURIComponent(error.message || "Failed to authenticate with Google")}`
       );
     }
 
@@ -101,7 +112,7 @@ export async function GET(request: NextRequest) {
 
         if (user.googleUserId && user.googleUserId !== googleUserId) {
           return NextResponse.redirect(
-            `retoro://google-auth?error=email_conflict&message=${encodeURIComponent("This email is already linked to a different Google account")}`
+            `retoro://callback?error=email_conflict&message=${encodeURIComponent("This email is already linked to a different Google account")}`
           );
         }
 
@@ -163,17 +174,17 @@ export async function GET(request: NextRequest) {
     // Create session
     const session = await createSession(user.id, anonymousUserId);
 
-    console.log(`Google auth successful for user ${user.id}`);
+    console.log(`✅ Google auth successful for user ${user.id}`);
 
     // Redirect back to app with success and token
     // The iOS app will parse this URL and extract the token
     return NextResponse.redirect(
-      `retoro://google-auth?status=success&token=${encodeURIComponent(session.token)}`
+      `retoro://callback?status=success&token=${encodeURIComponent(session.token)}`
     );
   } catch (error) {
-    console.error("Google authentication callback error:", error);
+    console.error("❌ Google authentication callback error:", error);
     return NextResponse.redirect(
-      `retoro://google-auth?error=server_error&message=${encodeURIComponent("Authentication failed")}`
+      `retoro://callback?error=server_error&message=${encodeURIComponent("Authentication failed")}`
     );
   }
 }
