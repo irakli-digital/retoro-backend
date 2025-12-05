@@ -8,7 +8,7 @@ import {
 // Type definitions for n8n response
 interface ParsedItem {
   item_name: string;
-  item_cost: number;
+  item_cost: string;  // String to handle "Undefined"
   item_quantity: number;
   item_currency: string;
   currency_symbol: string;
@@ -17,6 +17,7 @@ interface ParsedItem {
 interface N8nSuccessResponse {
   success: true;
   seller_name: string;
+  purchase_date: string;  // YYYY-MM-DD or "Undefined"
   items: ParsedItem[];
 }
 
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest) {
     
     console.log("✅ Invoice parsed successfully:", {
       seller: successData.seller_name,
+      purchase_date: successData.purchase_date,
       itemCount: successData.items.length,
     });
 
@@ -141,6 +143,7 @@ export async function POST(request: NextRequest) {
       success: true,
       message: "Invoice parsed successfully",
       seller_name: successData.seller_name,
+      purchase_date: successData.purchase_date,
       items: successData.items,
     });
   } catch (error) {
