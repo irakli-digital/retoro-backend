@@ -44,13 +44,22 @@ export async function GET(request: NextRequest) {
 // POST /api/retailers - Create custom retailer
 export async function POST(request: NextRequest) {
   try {
-    const authResult = await requireAuth(request);
+    // Allow both authenticated users and API key (for n8n)
+    const apiKey = request.headers.get("x-api-key");
+    let userId: string;
 
-    if (authResult.error) {
-      return authResult.error;
+    if (apiKey && apiKey === process.env.RETORO_API_KEY) {
+      // API key authentication (for n8n and internal services)
+      const userInfo = await getUserOrAnonymous(request);
+      userId = userInfo.userId;
+    } else {
+      // Regular session authentication
+      const authResult = await requireAuth(request);
+      if (authResult.error) {
+        return authResult.error;
+      }
+      userId = authResult.user.id;
     }
-
-    const userId = authResult.user.id;
     const body = await request.json();
 
     // Validate input
