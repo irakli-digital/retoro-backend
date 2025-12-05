@@ -1,0 +1,387 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "invoice-parse",
+          "responseMode": "lastNode",
+          "options": {
+            "binaryData": true,
+            "binaryPropertyName": "data"
+          }
+        },
+        "id": "6d1646a2-7767-44d8-a37d-9a810f714c04",
+        "name": "Webhook Trigger",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [
+          -528,
+          144
+        ],
+        "webhookId": "invoice-parse"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "id-1",
+                "leftValue": "={{ $binary.data.mimeType }}",
+                "rightValue": "image/",
+                "operator": {
+                  "type": "string",
+                  "operation": "startsWith"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "c84bf4c5-0389-4528-927a-a0ee0866af5d",
+        "name": "Check File Type",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -304,
+          144
+        ]
+      },
+      {
+        "parameters": {
+          "documentType": "image_url",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.mistralAi",
+        "typeVersion": 1,
+        "position": [
+          128,
+          48
+        ],
+        "id": "73aff0be-d54a-46d5-84ae-0281835b06fd",
+        "name": "Extract text - Image",
+        "credentials": {
+          "mistralCloudApi": {
+            "id": "WZEuqlC6d4b4G4dV",
+            "name": "Mistral Cloud account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.mistralAi",
+        "typeVersion": 1,
+        "position": [
+          128,
+          240
+        ],
+        "id": "48088dce-83c6-45c1-a5c7-6125a90c3f7e",
+        "name": "Extract text - PDF",
+        "credentials": {
+          "mistralCloudApi": {
+            "id": "WZEuqlC6d4b4G4dV",
+            "name": "Mistral Cloud account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "chatgpt-4o-latest",
+            "mode": "list",
+            "cachedResultName": "CHATGPT-4O-LATEST"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=Analyze the following text extracted from an uploaded document and determine if it is an invoice, receipt, or payment confirmation.\n\nText to analyze:\n{{ $json.pages[0].markdown }}\n\nYour task:\n1. Determine if this document is an invoice, receipt, or payment confirmation\n2. Look for indicators such as:\n   - Seller/merchant name\n   - Itemized list of products or services\n   - Prices and totals\n   - Payment information\n   - Invoice/receipt numbers\n   - Dates\n\nReturn ONLY a JSON object with this structure:\n{\n  \"is_valid_invoice\": true/false,\n  \"document_type\": \"invoice\" | \"receipt\" | \"payment_confirmation\" | \"other\",\n  \"confidence\": 0.0-1.0\n}\n\nIf the document is clearly NOT an invoice/receipt/payment confirmation (e.g., random image, screenshot, document without purchase information), set is_valid_invoice to false."
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "textFormat": {
+              "textOptions": {
+                "type": "json_schema",
+                "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"is_valid_invoice\": {\n      \"type\": \"boolean\",\n      \"description\": \"Whether this is a valid invoice, receipt, or payment confirmation\"\n    },\n    \"document_type\": {\n      \"type\": \"string\",\n      \"enum\": [\"invoice\", \"receipt\", \"payment_confirmation\", \"other\"],\n      \"description\": \"Type of document\"\n    },\n    \"confidence\": {\n      \"type\": \"number\",\n      \"minimum\": 0,\n      \"maximum\": 1,\n      \"description\": \"Confidence level (0.0 to 1.0)\"\n    }\n  },\n  \"required\": [\"is_valid_invoice\", \"document_type\", \"confidence\"],\n  \"additionalProperties\": false\n}"
+              }
+            }
+          }
+        },
+        "id": "ce86db9a-29be-4f66-b123-1931e2581114",
+        "name": "Validate Invoice",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2,
+        "position": [
+          352,
+          144
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "eJNHP6n8O3Y9Iv2F",
+            "name": "Open Ai - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "invoice-validation-condition",
+                "leftValue": "={{ $json.output[0].content[0].text.is_valid_invoice }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          576,
+          144
+        ],
+        "id": "526dc23c-3cdb-4eee-a38a-66df06387e24",
+        "name": "Check If Valid Invoice"
+      },
+      {
+        "parameters": {
+          "modelId": {
+            "__rl": true,
+            "value": "chatgpt-4o-latest",
+            "mode": "list",
+            "cachedResultName": "CHATGPT-4O-LATEST"
+          },
+          "responses": {
+            "values": [
+              {
+                "content": "=You are an invoice data extraction assistant. Extract the following information from invoices, receipts, or payment confirmations from the text below:\n\n{{ $json.pages ? $json.pages[0].markdown : $json.text }}{{ $('Extract text - Image').item.json.pages[0].markdown }}\n\nREQUIRED FIELDS:\n- seller_name: The company/merchant name (seller)\n- items: Array of purchased items/services with:\n  - item_name: Product or service name\n  - item_cost: Price per unit (numeric value only, no currency symbol)\n  - item_quantity: Number of units (default to 1 if not specified)\n  - item_currency: Currency code (e.g., GEL, USD, EUR)\n  - currency_symbol: Currency symbol if visible (e.g., $, €, ₾, ₹), otherwise use empty string \"\"\n\nEXTRACTION RULES:\n1. If multiple items exist, create separate entries in the items array\n2. Extract only numeric values for costs (remove currency symbols)\n3. Use standard 3-letter currency codes (ISO 4217)\n4. For currency_symbol: Extract the symbol if clearly visible in the document (e.g., $, €, ₾, ₹). If not visible or unclear, use an empty string \"\".\n5. If quantity is not mentioned, assume quantity = 1\n\nOUTPUT FORMAT:\nReturn valid JSON matching the provided schema. Do not include any explanatory text outside the JSON.\n```\n\n---\n\n## **JSON Schema:**\n\n```json\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"seller_name\": {\n      \"type\": \"string\",\n      \"description\": \"Company or merchant name\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"description\": \"List of purchased items\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"item_name\": {\n            \"type\": \"string\",\n            \"description\": \"Product or service name\"\n          },\n          \"item_cost\": {\n            \"type\": \"number\",\n            \"description\": \"Price per unit (numeric only)\"\n          },\n          \"item_quantity\": {\n            \"type\": \"integer\",\n            \"description\": \"Number of units purchased\",\n            \"default\": 1\n          },\n          \"item_currency\": {\n            \"type\": \"string\",\n            \"description\": \"Currency code (ISO 4217)\",\n            \"pattern\": \"^[A-Z]{3}$\"\n          },\n          \"currency_symbol\": {\n            \"type\": \"string\",\n            \"description\": \"Currency symbol (e.g., $, €, ₾, ₹)\"\n          }\n        },\n        \"required\": [\"item_name\", \"item_cost\", \"item_quantity\", \"item_currency\"],\n        \"additionalProperties\": false\n      },\n      \"minItems\": 1\n    }\n  },\n  \"required\": [\"seller_name\", \"items\"],\n  \"additionalProperties\": false\n}\n```\n\n---\n\n## **Expected Output for our Example:**\n\n```json\n{\n  \"seller_name\": \"mypen.ge\",\n  \"items\": [\n    {\n      \"item_name\": \"Mypen PRO Subscription\",\n      \"item_cost\": 29.0,\n      \"item_quantity\": 1,\n      \"item_currency\": \"GEL\",\n      \"currency_symbol\": \"₾\"\n    }\n  ]\n}\n```\n\n---\n\n## **For Multiple Items Example:**\n\nIf the invoice had multiple items, it would look like:\n\n```json\n{\n  \"seller_name\": \"mypen.ge\",\n  \"items\": [\n    {\n      \"item_name\": \"Mypen PRO Subscription\",\n      \"item_cost\": 29.0,\n      \"item_quantity\": 1,\n      \"item_currency\": \"GEL\",\n      \"currency_symbol\": \"₾\"\n    },\n    {\n      \"item_name\": \"Premium Support\",\n      \"item_cost\": 15.0,\n      \"item_quantity\": 2,\n      \"item_currency\": \"GEL\",\n      \"currency_symbol\": \"₾\"\n    }\n  ]\n}\n"
+              }
+            ]
+          },
+          "builtInTools": {},
+          "options": {
+            "textFormat": {
+              "textOptions": {
+                "type": "json_schema",
+                "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"seller_name\": {\n      \"type\": \"string\",\n      \"description\": \"Company or merchant name\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"description\": \"List of purchased items\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"item_name\": {\n            \"type\": \"string\",\n            \"description\": \"Product or service name\"\n          },\n          \"item_cost\": {\n            \"type\": \"number\",\n            \"description\": \"Price per unit (numeric only)\"\n          },\n          \"item_quantity\": {\n            \"type\": \"integer\",\n            \"description\": \"Number of units purchased\",\n            \"default\": 1\n          },\n          \"item_currency\": {\n            \"type\": \"string\",\n            \"description\": \"Currency code (ISO 4217)\",\n            \"pattern\": \"^[A-Z]{3}$\"\n          },\n          \"currency_symbol\": {\n            \"type\": \"string\",\n            \"description\": \"Currency symbol (e.g., $, €, ₾, ₹). Use empty string if not visible.\"\n          }\n        },\n        \"required\": [\"item_name\", \"item_cost\", \"item_quantity\", \"item_currency\", \"currency_symbol\"],\n        \"additionalProperties\": false\n      },\n      \"minItems\": 1\n    }\n  },\n  \"required\": [\"seller_name\", \"items\"],\n  \"additionalProperties\": false\n}"
+              }
+            }
+          }
+        },
+        "id": "b2a55644-ba4f-4d28-bf17-3d3a8fbe3a5c",
+        "name": "Extract Invoice Data with AI",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2,
+        "position": [
+          800,
+          48
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "eJNHP6n8O3Y9Iv2F",
+            "name": "Open Ai - IC"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Parse the AI response and return clean invoice data\n// This workflow ONLY parses - no database operations\n\nconst results = [];\n\nfor (const input of $input.all()) {\n  let invoiceData;\n  \n  try {\n    let content;\n    \n    // Handle the specific OpenAI response format\n    if (input.json.output && Array.isArray(input.json.output) && input.json.output[0]) {\n      const message = input.json.output[0];\n      if (message.content && Array.isArray(message.content) && message.content[0]) {\n        content = message.content[0].text;\n      }\n    }\n    // Fallback for other AI response formats\n    else if (input.json.choices && input.json.choices[0]?.message?.content) {\n      content = input.json.choices[0].message.content;\n    } \n    else if (input.json.content) {\n      content = input.json.content;\n    } \n    else if (typeof input.json === 'string') {\n      content = input.json;\n    } \n    else {\n      content = JSON.stringify(input.json);\n    }\n    \n    // If content is already an object, use it directly\n    if (typeof content === 'object') {\n      invoiceData = content;\n    } else {\n      // Extract JSON from string content (handle markdown code blocks)\n      const jsonMatch = content.match(/```(?:json)?\\s*([\\s\\S]*?)```/) || content.match(/\\{[\\s\\S]*\\}/);\n      \n      if (jsonMatch) {\n        const jsonString = jsonMatch[1] || jsonMatch[0];\n        invoiceData = JSON.parse(jsonString.trim());\n      } else {\n        invoiceData = JSON.parse(content);\n      }\n    }\n    \n  } catch (e) {\n    throw new Error(`Failed to parse invoice data: ${e.message}. Response: ${JSON.stringify(input.json)}`);\n  }\n  \n  // Validate required fields\n  if (!invoiceData.seller_name) {\n    throw new Error('Seller name not found in invoice');\n  }\n  \n  if (!invoiceData.items || !Array.isArray(invoiceData.items) || invoiceData.items.length === 0) {\n    throw new Error('No items found in invoice');\n  }\n  \n  // Map items to ensure all required fields exist\n  const mappedItems = invoiceData.items.map(item => ({\n    item_name: item.item_name || 'Unnamed Item',\n    item_cost: item.item_cost || 0,\n    item_quantity: item.item_quantity || 1,\n    item_currency: item.item_currency || 'USD',\n    currency_symbol: item.currency_symbol || ''\n  }));\n  \n  // Return clean parsed data - NO database operations\n  results.push({\n    json: {\n      success: true,\n      seller_name: invoiceData.seller_name,\n      items: mappedItems\n    }\n  });\n}\n\nreturn results;"
+        },
+        "id": "11734204-e5df-4650-8b71-749d6f85204f",
+        "name": "Parse Invoice Data",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1024,
+          48
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "96147189-b5b3-4d95-afae-18b52e3f401f",
+        "name": "Return Parsed Data",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          1248,
+          48
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Return error for invalid invoice\nconst validationData = $('Validate Invoice').item.json;\nconst validationResult = validationData.output[0].content[0].text;\n\nreturn {\n  json: {\n    success: false,\n    error: true,\n    message: \"This doesn't appear to be a valid invoice, receipt, or payment confirmation.\",\n    document_type: validationResult.document_type || \"other\",\n    confidence: validationResult.confidence || 0\n  }\n};"
+        },
+        "id": "86bb87f0-d0d2-40d6-b444-ccca3d794f89",
+        "name": "Format Error - Invalid Invoice",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          800,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "d36e825e-4c57-4760-a7cd-2d074539d173",
+        "name": "Return Error",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          1024,
+          240
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Trigger": {
+        "main": [
+          [
+            {
+              "node": "Check File Type",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check File Type": {
+        "main": [
+          [
+            {
+              "node": "Extract text - Image",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Extract text - PDF",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract text - Image": {
+        "main": [
+          [
+            {
+              "node": "Validate Invoice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract text - PDF": {
+        "main": [
+          [
+            {
+              "node": "Validate Invoice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate Invoice": {
+        "main": [
+          [
+            {
+              "node": "Check If Valid Invoice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Check If Valid Invoice": {
+        "main": [
+          [
+            {
+              "node": "Extract Invoice Data with AI",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Format Error - Invalid Invoice",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extract Invoice Data with AI": {
+        "main": [
+          [
+            {
+              "node": "Parse Invoice Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Invoice Data": {
+        "main": [
+          [
+            {
+              "node": "Return Parsed Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Error - Invalid Invoice": {
+        "main": [
+          [
+            {
+              "node": "Return Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "c0320382499acc1816c05e1130ede806d6731eecdef3b30ac30aabf4236c8764"
+    }
+  }
+

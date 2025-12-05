@@ -343,6 +343,53 @@ The API supports anonymous users (users without accounts) to enable data persist
 3. **Data Migration**: When user registers/logs in, their anonymous data is migrated to the authenticated account
 4. **Session Association**: Sessions table has `anonymous_user_id` field to link anonymous and authenticated sessions
 
+## Invoice Processing Architecture
+
+The invoice processing uses a simplified architecture where n8n only handles OCR/AI parsing, and the backend handles all database operations.
+
+### Flow
+```
+iOS App -> Backend -> n8n (parse only) -> Backend (creates DB records) -> iOS App
+```
+
+### n8n Workflow (Parse Only)
+n8n receives the image and returns parsed JSON:
+```json
+{
+  "success": true,
+  "seller_name": "Amazon",
+  "items": [
+    {
+      "item_name": "Product Name",
+      "item_cost": 29.99,
+      "item_quantity": 1,
+      "item_currency": "USD",
+      "currency_symbol": "$"
+    }
+  ]
+}
+```
+
+### Backend Processing
+The backend `/api/upload/invoice` endpoint:
+1. Receives invoice image from iOS app
+2. Forwards to n8n for OCR + AI parsing
+3. Searches for existing retailer (case-insensitive)
+4. Creates retailer if not found (with 30-day default return window)
+5. Creates return items for each parsed item
+6. Returns created items to iOS
+
+### Benefits
+- **Stateless n8n**: No database credentials or API keys needed in n8n
+- **Centralized Logic**: All business logic in the backend
+- **Simplified Auth**: Backend handles authentication naturally
+- **Easier Debugging**: Clear separation of concerns
+
+### Configuration
+Set `N8N_INVOICE_WEBHOOK_URL` to your n8n parse webhook (e.g., `https://your-n8n.cloud/webhook/invoice-parse`).
+
+The n8n workflow file is in `n8n flow/scanner-simplified.json`.
+
 ## Return Logic
 
 The deadline calculation matches the iOS app's logic:
@@ -404,7 +451,7 @@ The following endpoints still need to be implemented:
 - `PUT /api/settings/currency` - Update preferred currency
 
 ### Upload API
-- `POST /api/upload/invoice` - Upload invoice (proxy to n8n)
+- `POST /api/upload/invoice` - Upload and process invoice (see Invoice Processing below)
 
 ### Support API
 - `POST /api/support/contact` - Send support request
