@@ -10,14 +10,32 @@ import {
 } from "@/lib/utils/api-response";
 import { ilike, or, and, eq } from "drizzle-orm";
 
-// GET /api/retailers - Get all retailers with optional search
+// GET /api/retailers - Get retailers: global + user's own custom retailers
 export async function GET(request: NextRequest) {
   try {
-    // Allow both authenticated and anonymous users
+    // Get current user (authenticated or anonymous)
+    const userInfo = await getUserOrAnonymous(request);
+    const userId = userInfo.userId;
+
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search");
 
-    // Build query with optional search filter
+    // Build visibility filter:
+    // - Global retailers (isCustom = false) OR
+    // - User's own custom retailers (createdBy = userId)
+    const visibilityFilter = or(
+      eq(retailerPolicies.isCustom, false),
+      eq(retailerPolicies.createdBy, userId)
+    );
+
+    // Combine with optional search filter
+    const whereClause = search && search.trim() !== ""
+      ? and(
+          visibilityFilter,
+          ilike(retailerPolicies.name, `%${search.trim()}%`)
+        )
+      : visibilityFilter;
+
     const retailers = await db
       .select({
         id: retailerPolicies.id,
@@ -27,11 +45,7 @@ export async function GET(request: NextRequest) {
         has_free_returns: retailerPolicies.hasFreeReturns,
       })
       .from(retailerPolicies)
-      .where(
-        search && search.trim() !== ""
-          ? ilike(retailerPolicies.name, `%${search.trim()}%`)
-          : undefined
-      )
+      .where(whereClause)
       .orderBy(retailerPolicies.name);
 
     return successResponse(retailers);
@@ -76,15 +90,31 @@ export async function POST(request: NextRequest) {
       has_free_returns,
     } = validation.data;
 
-    // Check if retailer already exists
+    // Check if retailer already exists within user's visible scope
+    // (global retailers OR user's own custom retailers)
     const [existing] = await db
       .select()
       .from(retailerPolicies)
-      .where(eq(retailerPolicies.name, name))
+      .where(
+        and(
+          ilike(retailerPolicies.name, name), // Case-insensitive name match
+          or(
+            eq(retailerPolicies.isCustom, false), // Global retailer
+            eq(retailerPolicies.createdBy, userId) // User's own retailer
+          )
+        )
+      )
       .limit(1);
 
     if (existing) {
-      return errorResponse("A retailer with this name already exists", 409);
+      // Return the existing retailer instead of error (for scan flow convenience)
+      return successResponse({
+        id: existing.id,
+        name: existing.name,
+        return_window_days: existing.returnWindowDays,
+        website_url: existing.websiteUrl,
+        has_free_returns: existing.hasFreeReturns,
+      }, 200);
     }
 
     // Create custom retailer
