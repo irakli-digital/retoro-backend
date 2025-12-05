@@ -38,14 +38,16 @@
         "parameters": {
           "method": "POST",
           "url": "={{ $('Edit Fields1').item.json.RETORO_API_URL }}/retailers",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
           "sendHeaders": true,
           "headerParameters": {
             "parameters": [
               {
                 "name": "X-Anonymous-User-ID",
                 "value": "={{ $('Webhook Trigger').item.json.query?.user_id || $json.user_id || 'n8n-system' }}"
+              },
+              {
+                "name": "X-API-Key",
+                "value": "={{ $('Edit Fields1').item.json.RETORO_API_KEY }}"
               }
             ]
           },
@@ -85,13 +87,7 @@
         "position": [
           2400,
           128
-        ],
-        "credentials": {
-          "httpHeaderAuth": {
-            "id": "6uoywV79GxAzcFU4",
-            "name": "RTR - IC"
-          }
-        }
+        ]
       },
       {
         "parameters": {
@@ -122,8 +118,6 @@
       {
         "parameters": {
           "url": "={{ $json.RETORO_API_URL }}/retailers?search={{ encodeURIComponent($json.seller_name) }}",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
           "options": {
             "response": {
               "response": {
@@ -140,26 +134,22 @@
           1728,
           48
         ],
-        "alwaysOutputData": true,
-        "credentials": {
-          "httpHeaderAuth": {
-            "id": "6uoywV79GxAzcFU4",
-            "name": "RTR - IC"
-          }
-        }
+        "alwaysOutputData": true
       },
       {
         "parameters": {
           "method": "POST",
           "url": "={{ $('Edit Fields1').item.json.RETORO_API_URL }}/return-items",
-          "authentication": "genericCredentialType",
-          "genericAuthType": "httpHeaderAuth",
           "sendHeaders": true,
           "headerParameters": {
             "parameters": [
               {
                 "name": "X-Anonymous-User-ID",
                 "value": "={{ $('Webhook Trigger').item.json.query?.user_id || $json.user_id || 'n8n-system' }}"
+              },
+              {
+                "name": "X-API-Key",
+                "value": "={{ $('Edit Fields1').item.json.RETORO_API_KEY }}"
               }
             ]
           },
@@ -210,13 +200,7 @@
           3072,
           48
         ],
-        "alwaysOutputData": true,
-        "credentials": {
-          "httpHeaderAuth": {
-            "id": "6uoywV79GxAzcFU4",
-            "name": "RTR - IC"
-          }
-        }
+        "alwaysOutputData": true
       },
       {
         "parameters": {
