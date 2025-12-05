@@ -345,12 +345,28 @@ The API supports anonymous users (users without accounts) to enable data persist
 
 ## Invoice Processing Architecture
 
-The invoice processing uses a simplified architecture where n8n only handles OCR/AI parsing, and the backend handles all database operations.
+The invoice processing uses a simplified architecture where:
+- **n8n** only handles OCR/AI parsing (no database access)
+- **Backend** forwards images and returns parsed data
+- **iOS** populates the form and lets user review before submitting
 
 ### Flow
 ```
-iOS App -> Backend -> n8n (parse only) -> Backend (creates DB records) -> iOS App
+1. iOS uploads invoice image
+2. Backend forwards to n8n for parsing
+3. n8n returns parsed JSON (seller, items, prices)
+4. Backend returns parsed data to iOS
+5. iOS populates form with parsed data
+6. User reviews/edits the form
+7. User taps Submit
+8. iOS calls POST /api/return-items (creates DB record)
 ```
+
+### Why This Architecture?
+- User can review and edit parsed data before committing
+- n8n stays stateless (no database credentials needed)
+- Clear separation: parsing vs. data creation
+- Better UX: user has control over final data
 
 ### n8n Workflow (Parse Only)
 n8n receives the image and returns parsed JSON:
@@ -370,20 +386,18 @@ n8n receives the image and returns parsed JSON:
 }
 ```
 
-### Backend Processing
-The backend `/api/upload/invoice` endpoint:
+### Backend `/api/upload/invoice`
+This endpoint ONLY parses - it does NOT create database records:
 1. Receives invoice image from iOS app
 2. Forwards to n8n for OCR + AI parsing
-3. Searches for existing retailer (case-insensitive)
-4. Creates retailer if not found (with 30-day default return window)
-5. Creates return items for each parsed item
-6. Returns created items to iOS
+3. Returns parsed data to iOS for form population
 
-### Benefits
-- **Stateless n8n**: No database credentials or API keys needed in n8n
-- **Centralized Logic**: All business logic in the backend
-- **Simplified Auth**: Backend handles authentication naturally
-- **Easier Debugging**: Clear separation of concerns
+### iOS Form Population
+When parsed data is received, the iOS app:
+1. Populates item name, price, and currency fields
+2. Searches for matching retailer by seller_name
+3. Displays success message: "Review the details and tap Submit"
+4. User can edit any field before submitting
 
 ### Configuration
 Set `N8N_INVOICE_WEBHOOK_URL` to your n8n parse webhook (e.g., `https://your-n8n.cloud/webhook/invoice-parse`).
